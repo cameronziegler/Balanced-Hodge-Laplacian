@@ -117,7 +117,9 @@ class simplicialComplex:
         
         #Calculate Hodge Laplacians
         self.L0 = np.dot(self.B1, self.B1.T)
-        self.L1 = np.dot(self.B1.T, self.B1) + np.dot(self.B2, self.B2.T)
+        self.edgeComp = np.dot(self.B1.T, self.B1)
+        self.triComp = np.dot(self.B2, self.B2.T)
+        self.L1 = self.edgeComp + self.triComp
     
     def plotTriangles(self, tri_color='blue', alpha=.2, ax=None):
         '''Plots the triangles of the simplicial complex'''
@@ -144,10 +146,10 @@ class simplicialComplex:
         self.plotGraph(ax, **kwargs)
         self.plotTriangles(tri_color, alpha, ax)
         
-    def balancedHodge(self, alpha=.5):
-        '''Returns the 1-balanced Hodge Laplacian for the simplicial complex
-        for the chosen alpha value.'''
-        return alpha*np.dot(self.B1.T, self.B1) + (1-alpha)*np.dot(self.B2, self.B2.T)
+    def generalizedHodge(self, delta=0):
+        '''Returns the 1-generalized Hodge Laplacian for the simplicial complex
+        for the chosen delta value.'''
+        return (1+delta)*self.edgeComp + (1-delta)*self.triComp
 
 def presetSC(index):
     '''Loads in a premade simplicial complex.  Inputting an invalid index
@@ -567,18 +569,18 @@ def presetSC(index):
         pos = {}
         return simplicialComplex(nodes, edges, triangles, pos)
         
-def balancedHodge(B1, B2, alpha=.5): 
+def generalizedHodge(B1, B2, delta=0): 
     '''1st balanced Hodge Laplacians of the simplex given by boundary
     matrices B1 and B2'''
-    L1 = alpha*np.dot(B1.T, B1) + (1-alpha)*np.dot(B2, B2.T)
+    L1 = (1+delta)*np.dot(B1.T, B1) + (1-delta)*np.dot(B2, B2.T)
     return L1
 
-def hodgeDecomp(c, B1, B2, alpha=.5):
+def hodgeDecomp(c, B1, B2, delta=0):
     #Takes in an edge flow vector c as well as the matrices B1 and B2 and
     # outputs the vector decomposed into it's projections in gradient
     # flow, curl flow, and harmonic flow. 
-    F = alpha*B1.T
-    G = (1-alpha)*B2
+    F = (1+delta)*B1.T
+    G = (1-delta)*B2
             
     g = np.dot(F,linalg.lsqr(F, c)[0])
     r = np.dot(G,linalg.lsqr(G, c)[0])
@@ -586,16 +588,16 @@ def hodgeDecomp(c, B1, B2, alpha=.5):
     
     return g,r,h
     
-def BHL1(sc, alpha=.5, deltat=.01, T=2000, seed=1):
-    '''Takes in a simplicial complex and calculates the Hodge Laplacian weighted by alpha (lower weight). 
+def GHL1(sc, delta=0, deltat=.005, T=2000, seed=1):
+    '''Takes in a simplicial complex and calculates the Hodge Laplacian weighted by delta (lower weight). 
     Starts with a random initial condition with edge values between 0 and 1, summing to 1.
-    Then runs a forward Euler simulation where dx/dt is -Lx (the BHL-1 dynamics).  deltat is the size 
+    Then runs a forward Euler simulation where dx/dt is -Lx (the GHL-1 dynamics).  deltat is the size 
     of the time steps and T is the number of time steps.  Returns edge flows, gradient, curl, and 
     harmonic components. The seed for the random initial conditions can be set, but the initial 
     conditions will be the same without manually changing this seed. Outputs edge flow, gradient, 
     curl, and harmonic components for each time step.'''
     
-    L = sc.balancedHodge(alpha)
+    L = sc.generalizedHodge(delta)
 
     #Number of edges n:
     (n, m) = np.shape(L)
@@ -619,7 +621,7 @@ def BHL1(sc, alpha=.5, deltat=.01, T=2000, seed=1):
         e[t+1, :] = e[t, :] -deltat*np.dot(L, e[t, :])  #recursive forward euler calculation
 
         #calculates hodge decomposition at each time step
-        (g[t, :], c[t, :], h[t, :]) = hodgeDecomp(e[t+1, :], sc.B1, sc.B2, alpha=alpha);
+        (g[t, :], c[t, :], h[t, :]) = hodgeDecomp(e[t+1, :], sc.B1, sc.B2, delta=delta);
     
     return e, g, c, h
 
@@ -649,12 +651,13 @@ def subplotSC(sc, weights, ax=None, xlabel='', ylabel = '', color='k', tri_color
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     
-def consensusOnSCPlot(sc, alpha=.5, times=(0, 50, 500), T=2000):
-    '''Runs consensus simulation using BHL-1 and the given balancing parameter alpha.
+    
+def consensusOnSCPlot(sc, delta=0, times=(0, 50, 500), T=2000):
+    '''Runs consensus simulation using GHL-1 and the given balancing parameter delta.
     Then plots the Hodge decomposition projections onto the simplicial complex for the
     given time increments. T is the total number of time steps.'''
     #Runs consensus algorithm.  
-    e, g, c, h = BHL1(sc,alpha=alpha, T=T)
+    e, g, c, h = GHL1(sc,delta=delta, T=T)
 
     fig, axes = plt.subplots(len(times), 4, figsize=(12, len(times)*3))
 
@@ -680,24 +683,24 @@ def consensusOnSCPlot(sc, alpha=.5, times=(0, 50, 500), T=2000):
                 ax.set_xlabel(xlabels[j])
     plt.tight_layout()
     
-def timeSeriesPlot(ax,e, g, c, h,alpha, xrange=np.arange(1,1000), fsize=12):
-    '''Plots the BHL-1 consensus under the Hodge decomposition.'''
+def timeSeriesPlot(ax,e, g, c, h,delta, xrange=np.arange(1,1000), fsize=12):
+    '''Plots the GHL-1 consensus under the Hodge decomposition.'''
     ax[0].plot(e[xrange])
     ax[1].plot(g[xrange])
     ax[2].plot(c[xrange])
     ax[3].plot(h[xrange])
     
-def timeSeriesFigure(sc, alphas = .5, xrange=np.arange(1,500)):
-    '''Creates a timeSeriesPlot for each value of alpha, and puts them
+def timeSeriesFigure(sc, deltas = 0, xrange=np.arange(1,500)):
+    '''Creates a timeSeriesPlot for each value of delta, and puts them
     nicely into subplots.'''
-    fig, axes = plt.subplots(len(alphas),4,figsize=(12, 2.5*len(alphas)), sharex=True, sharey=True)
+    fig, axes = plt.subplots(len(deltas),4,figsize=(12, 2.5*len(deltas)), sharex=True, sharey=True)
     titles=['total', 'gradient', 'curl', 'harmonic']
 
     #Plotting the time series
-    for i, a in enumerate(alphas):
-        e, g, c, h = BHL1(sc, alpha=a)
-        timeSeriesPlot(axes[i],e, g, c, h,a, xrange)
-        axes[i,0].set_ylabel(f"$\\alpha = {alphas[i]}$")
+    for i, d in enumerate(deltas):
+        e, g, c, h = GHL1(sc, delta=d)
+        timeSeriesPlot(axes[i],e, g, c, h,d, xrange)
+        axes[i,0].set_ylabel(f"$\\delta = {deltas[i]}$")
 
     #Labels
     for j in range(4):
@@ -707,16 +710,16 @@ def timeSeriesFigure(sc, alphas = .5, xrange=np.arange(1,500)):
     plt.tight_layout()
     
 def subspaceConvergencePlot(sc, N=20):
-    '''Plots the convergence rates for the gradient and curl subspaces in a BHL-1 simulation for N 
-    equally spaced balancing parameters from 0 to 1.  Also show the theoretical convergence rates 
+    '''Plots the convergence rates for the gradient and curl subspaces in a GHL-1 simulation for N 
+    equally spaced balancing parameters from -1 to 1.  Also show the theoretical convergence rates 
     based on the the eigenvectors of the compontents of the Balanced Hodge Laplacian.  sc is the 
     relevant simplicial complex.'''
 
-    #Values of α that we test
-    alphaVals = np.arange(1, N+1)/(N+1)
+    #Values of delta that we test
+    deltaVals = np.arange(1, N+1)/(N+1)*2-1
 
     #Size of time steps and number of time steps
-    deltat = .01
+    deltat = .005
 
     #Slopes of the log error for total edge flow, gradient, and curl
     eErrorSlope = np.zeros(N)
@@ -728,11 +731,11 @@ def subspaceConvergencePlot(sc, N=20):
     upperEig = np.zeros(N)
 
     for i in range(N):
-        alpha = alphaVals[i]
+        delta = deltaVals[i]
 
         #Finds Laplacian and runs simulation
-        L = sc.balancedHodge(alpha)
-        e, g, c, h = BHL1(sc, alpha=alpha, deltat = deltat)
+        L = sc.generalizedHodge(delta)
+        e, g, c, h = GHL1(sc, delta=delta, deltat = deltat)
 
         #Gets time steps and number of edges
         (T, n) = np.shape(g)
@@ -788,73 +791,69 @@ def subspaceConvergencePlot(sc, N=20):
 
         #We compute the relevant eigenvalues.
         lambda21 = (min(np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0][np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0]>1e-14]));
-        lowerEig[i]=-lambda21*alpha
+        lowerEig[i]=-lambda21*(1+delta)
         lambda22 = (min(np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0][np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0]>1e-14]));
-        upperEig[i]=-lambda22*(1-alpha)
+        upperEig[i]=-lambda22*(1-delta)
         
         #Makes the plot 
 
-    plt.plot(alphaVals, -eErrorSlope, ".",  color='k', zorder=2, ms=8)
-    plt.plot(alphaVals, -gErrorSlope, "^", color = 'tomato', fillstyle="none",zorder=1, ms=9)
-    plt.plot(alphaVals, -cErrorSlope, "s", color = 'fuchsia', fillstyle="none",zorder=1, ms=8)
-    plt.plot(alphaVals, -lowerEig, color = 'tomato', zorder=1, linestyle='-')
-    plt.plot(alphaVals, -upperEig, color = 'fuchsia', zorder=1, linestyle='--')
+    plt.plot(deltaVals, -eErrorSlope, ".",  color='k', zorder=2, ms=8)
+    plt.plot(deltaVals, -gErrorSlope, "^", color = 'tomato', fillstyle="none",zorder=1, ms=9)
+    plt.plot(deltaVals, -cErrorSlope, "s", color = 'fuchsia', fillstyle="none",zorder=1, ms=8)
+    plt.plot(deltaVals, -lowerEig, color = 'tomato', zorder=1, linestyle='-')
+    plt.plot(deltaVals, -upperEig, color = 'fuchsia', zorder=1, linestyle='--')
     plt.title('Subspace Convergence Rates')
-    plt.xlabel(r'balancing parameter, $\alpha$')
-    plt.ylabel(r'convergence rate, $\lambda_2$')
-    plt.legend(('total', 'gradient subspace', 'curl subspace', '$\\alpha \\lambda_2^1$', '$(1-\\alpha)\\lambda_2^2$'))
-
-    # alphas = [.3, .54, .8]
-    # for a_star in alphas:
-    #     plt.plot([a_star]*2,[-.2,2],'k:',alpha=.4)
+    plt.xlabel(r'balancing parameter, $\delta$')
+    plt.ylabel(r'convergence rate, $\mu (\delta)$')
+    plt.legend(('total', 'gradient subspace', 'curl subspace', '$(1+\\delta) \\lambda_2^{(1)}$', '$(1-\\delta)\\lambda_2^{(2)}$'))
 
     plt.ylim(0)    
-    plt.xlim(0, 1)
+    plt.xlim(-1, 1)
     plt.tight_layout()
     
 def convergenceEigenvalues(sc):
-    '''Returns the two eigenvalues used to calculate the convergence rates of the subspaces with BHL-1 consensus.'''
+    '''Returns the two eigenvalues used to calculate the convergence rates of the subspaces with GHL-1 consensus.'''
     lambda21 = (min(np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0][np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0]>1e-14]));
     lambda22 = (min(np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0][np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0]>1e-14]));
     return lambda21.real, lambda22.real
     
-def optimalAlpha(sc):
-    '''Returns the balancing parameter alpha that optimizes convergence.'''
+def optimalDelta(sc):
+    '''Returns the balancing parameter delta that optimizes convergence.'''
     lambda21 = (min(np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0][np.linalg.eig(np.dot(sc.B1,sc.B1.T))[0]>1e-14]));
     lambda22 = (min(np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0][np.linalg.eig(np.dot(sc.B2,sc.B2.T))[0]>1e-14]));
-    return (lambda22/(lambda21+lambda22)).real
+    return ((lambda22-lambda21)/(lambda22+lambda21)).real
     
 def optimalRate(sc):
-    '''Returns the convergence rate with BHL-1 consensus when the balancing parameter is optimized.'''
+    '''Returns the convergence rate with GHL-1 consensus when the balancing parameter is optimized.'''
     l1, l2 = convergenceEigenvalues(sc)
-    a = optimalAlpha(sc)
-    return l1*a
+    d = optimalDelta(sc)
+    return l1*(1+d)
     
-def subspaceConvergencePlotWithExamples(sc, N=20, alphas=[]):
+def subspaceConvergencePlotWithExamples(sc, N=20, deltas=[]):
     '''Creates the same plot as subspaceConvergencePlot, but also includes subplots of the
-    log error during the simulation for different values of alpha.  These alpha values
-    can be specified, or will default to 0.2, 0.8, and the value for optimal convergence.'''
+    log error during the simulation for different values of delta.  These delta values
+    can be specified, or will default to -.6, 0.6, and the value for optimal convergence.'''
 
-    if alphas == []:
-        alphas = [.2, np.around(optimalAlpha(sc), 2), .8]
-    a = len(alphas)
+    if deltas == []:
+        deltas = [-.6, np.around(optimalDelta(sc), 2), .6]
+    d = len(deltas)
 
     fsize=12
     fig = plt.figure(figsize=(6, 6))
-    ax1 = plt.subplot2grid((3, a), (0, 0), colspan=a, rowspan=2)
+    ax1 = plt.subplot2grid((3, d), (0, 0), colspan=d, rowspan=2)
 
     subspaceConvergencePlot(sc, N)
-    #Plots a dotted line in the subspaceConvergencePlot for each specified value of alpha
-    for a_star in alphas:
-        plt.plot([a_star]*2,[-.2,2],'k:',alpha=.4)
+    #Plots a dotted line in the subspaceConvergencePlot for each specified value of delta
+    for d_star in deltas:
+        plt.plot([d_star]*2,[-.2,2*max(convergenceEigenvalues(sc))],'k:',alpha=.4)
 
     ##############################################
-    deltat = .01
-    axes = np.zeros(a, dtype='object')
+    deltat = .005
+    axes = np.zeros(d, dtype='object')
 
-    for i, alpha in enumerate(alphas):
+    for i, delta in enumerate(deltas):
         #Runs simulation
-        e, g, c, h = BHL1(sc, alpha=alpha, deltat = deltat)
+        e, g, c, h = GHL1(sc, delta=delta, deltat = deltat)
 
         #Gets time steps and number of edges
         (T, n) = np.shape(g)
@@ -883,10 +882,10 @@ def subspaceConvergencePlotWithExamples(sc, N=20, alphas=[]):
         cNormErr = np.delete(cNormErr, np.where(cNormErr == 0.0))
 
         if i==0:
-            axes[i] = plt.subplot2grid((3,a),(2,i))
+            axes[i] = plt.subplot2grid((3,d),(2,i))
         else:
-            axes[i] = plt.subplot2grid((3,a),(2,i), sharey=axes[0])
-            axes[i].set_yticks([])
+            axes[i] = plt.subplot2grid((3,d),(2,i), sharey=axes[0])
+            plt.setp(axes[i].get_yticklabels(), visible=False)
         iterator = 70
         plt.plot(deltat*np.arange(0,T-1)[::iterator], np.log(normErr)[::iterator],  " .",   color='k', zorder=3, ms=5)
         plt.plot(deltat*np.arange(0,T-1)[::iterator],np.log(gNormErr)[::iterator], "^", color = 'tomato', fillstyle="none",zorder=2, ms=7)
@@ -899,10 +898,9 @@ def subspaceConvergencePlotWithExamples(sc, N=20, alphas=[]):
         plt.xlim((0, T*deltat/2))
         plt.ylim((-12, 0))
 
-        axes[i].text(.6, .8, r"$\alpha= " + str(alphas[i]) + '$', fontsize = fsize+9-2*a, horizontalalignment='center', transform=axes[i].transAxes)
+        axes[i].text(.62, .8, r"$\delta= " + str(deltas[i]) + '$', fontsize = fsize+9-2*d, horizontalalignment='center', transform=axes[i].transAxes)
     ##############################################
     plt.tight_layout()
-    plt.show()
     
 def similarSCPlot(scs, colors=['green', 'blue', 'red', 'orange', 'purple']):
     '''Plots the given simplicial complexes in different colors, as well as showing the theoretical convergence
@@ -924,20 +922,20 @@ def similarSCPlot(scs, colors=['green', 'blue', 'red', 'orange', 'purple']):
     lambda22 = [convergenceEigenvalues(sc)[1] for sc in scs]
 
     plt.subplot(1, len(scs)+1, len(scs)+1)
-    plt.plot([0, 1], [0, lambda21[0]], color = 'black')
+    plt.plot([-1, 1], [0, 2*lambda21[0]], color = 'black')
     for i in range(len(scs)):
-        plt.plot([0, 1], [lambda22[i], 0], color = colors[i], linestyle='--')
+        plt.plot([-1, 1], [2*lambda22[i], 0], color = colors[i], linestyle='--')
     for i, sc in enumerate(scs):
-        plt.plot(optimalAlpha(sc), optimalAlpha(sc)*lambda21[i], c=colors[i], marker='o')
+        plt.plot(optimalDelta(sc), (1+optimalDelta(sc))*lambda21[i], c=colors[i], marker='o')
     plt.title(r'Subspace convergence', fontsize=15)
-    plt.xlabel(r'balancing parameter, $\alpha$', fontsize=12)
-    plt.ylabel(r'convergence rate, $\lambda_2$', fontsize=12)
-    plt.ylim(0, 2)
+    plt.xlabel(r'balancing parameter, $\delta$', fontsize=12)
+    plt.ylabel(r'convergence rate, $\mu (\delta)$', fontsize=12)
+    plt.ylim(0, 4)
     plt.legend(('gradient subspace', 'curl subspace, SC 1', 'curl subspace, SC 2', 'curl subspace, SC 3'), fontsize=10)
     plt.tight_layout()
     
-def optAlphaPlot(scs, colors = ['black']):
-    '''Plots the optimal balancing parameter (alpha) and the optimal convergence rate for the input for the
+def optDeltaPlot(scs, colors = ['black']):
+    '''Plots the optimal balancing parameter (delta) and the optimal convergence rate for the input for the
     inputted simplicial complexes.  Those simplicial complexes are also drawn on the same plot.  The 
     drawings can be colored if desired.'''
     N = len(scs)
@@ -960,27 +958,27 @@ def optAlphaPlot(scs, colors = ['black']):
         fig.savefig(images[i].name)
         plt.close(fig)
 
-    #Plot of optimal alpha values and convergence rates for these different simplicial complexes
-    optAlpha = np.zeros(N)
+    #Plot of optimal delta values and convergence rates for these different simplicial complexes
+    optDelta = np.zeros(N)
     optConvergence = np.zeros(N)
 
     #Calculate data
     for i, sc in enumerate(scs):
         if not sc.triangles:
-            optAlpha[i] = -.1
+            optDelta[i] = -.1
             optConvergence[i] = -.1
         else:
-            optAlpha[i] = optimalAlpha(sc)
+            optDelta[i] = optimalDelta(sc)
             optConvergence[i] = optimalRate(sc)
 
-    #Sort by optimal alpha
-    ind = np.argsort(optAlpha)
-    optAlpha = optAlpha[ind]
+    #Sort by optimal delta
+    ind = np.argsort(optDelta)
+    optDelta = optDelta[ind]
     optConvergence = optConvergence[ind]  
 
-    #Plots the optimal alpha and convergence rate
+    #Plots the optimal delta and convergence rate
     fig, ax = plt.subplots(figsize=(12, 8))
-    plt.plot(optAlpha, '.', ms=40)
+    plt.plot(optDelta, '.', ms=40)
     plt.plot(optConvergence, 's', ms=20)
 
     for i in range(N):
@@ -998,13 +996,13 @@ def optAlphaPlot(scs, colors = ['black']):
                             bboxprops={"edgecolor" : "none"})
         ax.add_artist(ab)
 
-    plt.legend(['optimal balancing parameter, $\\alpha\'$', 'optimal convergence rate'], fontsize=2*(fsize-2))
+    plt.legend(['optimal balancing parameter, $\\delta^*$', 'optimal convergence rate, $\mu(\\delta^*)$'], fontsize=2*(fsize-2))
     plt.rc('ytick', labelsize= 2*fsize)
-    plt.ylim(-.1)
+    plt.ylim(-1.3)
     ax.set_xticklabels([])
     plt.grid()
     ax.spines['bottom'].set_visible(False)
-    plt.title("Impact of 2-simplex arrangement on BHL-1 consensus", fontsize=2*fsize)
+    plt.title("Impact of 2-simplex arrangement on GHL-1 consensus", fontsize=2*fsize)
     plt.tight_layout()
 
     #Delete temporary images
